@@ -6,19 +6,19 @@
   <title>TYLER'S INTEGRATED FARM — POS, Inventory & Sales Report</title>
   
   <!-- ========================================================================
-       FIREBASE SDKs (Compat / Modular via CDN)
+       FIREBASE SDKs (CDN)
        ======================================================================== -->
   <script type="module">
     // Import the functions you need from the SDKs you need
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
-    import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-analytics.js";
+    // TODO: Add SDKs for Firebase products that you want to use (e.g., Firestore / Realtime Database)
+    // import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
 
     // Your web app's Firebase configuration
     const firebaseConfig = {
       apiKey: "AIzaSyDCHrt3XeP-X4tJcHH3uGCqapQZYzpSCPs",
       authDomain: "tif-pos.firebaseapp.com",
-      databaseURL: "https://tif-pos-default-rtdb.asia-southeast1.firebasedatabase.app", // Pinalitan / Idinagdag para sa RTDB online sync
       projectId: "tif-pos",
       storageBucket: "tif-pos.firebasestorage.app",
       messagingSenderId: "114069988700",
@@ -29,11 +29,12 @@
     // Initialize Firebase
     const app = initializeApp(firebaseConfig);
     const analytics = getAnalytics(app);
-    const db = getDatabase(app);
 
-    // I-expose sa global window para magamit ng app scripts sa ibaba
-    window.firebaseDB = { db, ref, set, get, onValue };
-    window.dispatchEvent(new Event('firebase-ready'));
+    // Make firebase globally available if needed by other scripts
+    window.firebaseApp = app;
+    window.firebaseAnalytics = analytics;
+    
+    console.log("Firebase initialized successfully!");
   </script>
 
   <style>
@@ -1036,7 +1037,7 @@
             <span>POS, Inventory &amp; Sales Report</span>
             <span class="status-pill" id="saveStatusPill">
               <span class="status-dot"></span>
-              <span id="saveStatusText">Connecting Cloud...</span>
+              <span id="saveStatusText">Auto-Saved</span>
             </span>
           </div>
         </div>
@@ -1091,7 +1092,7 @@
     <section id="tab-pos" class="tab-panel active">
       <div class="sample-banner" id="sampleNoticeBanner">
         <div>
-          <strong>Online Sync Enabled:</strong> Real-time Firebase cloud connection active for Tyler's Integrated Farm.
+          <strong>Note:</strong> Sample items loaded for Tyler's Integrated Farm. You can manage them in the <strong>Inventory</strong> tab.
         </div>
         <button type="button" class="btn btn-sm btn-outline" onclick="document.getElementById('sampleNoticeBanner').style.display='none'">Hide</button>
       </div>
@@ -1151,7 +1152,7 @@
             </div>
           </div>
 
-          <div class="checkout-grid" style="margin-bottom:0.65rem;">
+          <div class="checkout-grid" style="margin-bottom:0.75rem;">
             <div>
               <label class="form-label" for="posAmountTendered">Amount Tendered (₱)</label>
               <input type="number" id="posAmountTendered" class="form-control" step="0.01" min="0" placeholder="0.00" oninput="recalculateCartTotals()" />
@@ -1582,10 +1583,12 @@
   <div class="toast-container" id="toastContainer"></div>
 
   <!-- ========================================================================
-       JAVASCRIPT WITH FIREBASE ONLINE SYNC
+       JAVASCRIPT
        ======================================================================== -->
   <script>
     "use strict";
+
+    const STORAGE_KEY = "tylers_integrated_farm_pos_v5";
 
     let authConfig = {
       "Admin": { username: "admin", pin: "1234" },
@@ -1615,7 +1618,6 @@
 
     let cart = [];
     let selectedPOSCategory = "All";
-    let isInitializedFromFirebase = false;
 
     function round2(num) {
       return Math.round((Number(num) + Number.EPSILON) * 100) / 100;
@@ -1639,31 +1641,23 @@
         .replace(/"/g, "&quot;");
     }
 
-    // ========================================================================
-    // FIREBASE SYNC FUNCTIONS
-    // ========================================================================
-    function initFirebaseSync() {
-      if (!window.firebaseDB) return;
-      const { db, ref, onValue } = window.firebaseDB;
-      const dbRef = ref(db, 'tylers_integrated_farm_pos');
-
-      // Realtime listener para sa live online auto-save / multi-device sync
-      onValue(dbRef, (snapshot) => {
-        const val = snapshot.val();
-        const pillText = document.getElementById("saveStatusText");
-        const now = new Date();
-        const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-        if (val) {
-          appState.products = Array.isArray(val.products) ? val.products : DEFAULT_PRODUCTS;
-          appState.sales = Array.isArray(val.sales) ? val.sales : [];
-          appState.stockLogs = Array.isArray(val.stockLogs) ? val.stockLogs : [];
-          appState.receiptCounter = typeof val.receiptCounter === "number" ? val.receiptCounter : 1001;
-          if (val.auth && val.auth.Admin && val.auth.Cashier) {
-            appState.auth = val.auth;
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          appState.products = Array.isArray(parsed.products) ? parsed.products : DEFAULT_PRODUCTS;
+          appState.sales = Array.isArray(parsed.sales) ? parsed.sales : [];
+          appState.stockLogs = Array.isArray(parsed.stockLogs) ? parsed.stockLogs : [];
+          appState.receiptCounter = typeof parsed.receiptCounter === "number" ? parsed.receiptCounter : 1001;
+          if (parsed.auth && parsed.auth.Admin && parsed.auth.Cashier) {
+            appState.auth = parsed.auth;
+          }
+          if (parsed.currentUserRole) {
+            appState.currentUserRole = parsed.currentUserRole;
+            appState.currentUsername = parsed.currentUsername || parsed.currentUserRole;
           }
         } else {
-          // Kung wala pa sa Firebase, i-save ang initial default data
           appState.products = JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
           appState.auth = authConfig;
           appState.stockLogs = [{
@@ -1676,67 +1670,23 @@
           }];
           saveState();
         }
-
-        if (pillText) {
-          pillText.textContent = `Online Synced (${timeStr})`;
-        }
-
-        if (!isInitializedFromFirebase) {
-          isInitializedFromFirebase = true;
-          checkAuthentication();
-        } else {
-          refreshActiveUI();
-        }
-      }, (error) => {
-        console.error("Firebase sync error:", error);
-        const pillText = document.getElementById("saveStatusText");
-        if (pillText) pillText.textContent = "Offline Mode";
-        showToast("Warning: Real-time database sync error.", "error");
-      });
+      } catch (err) {
+        console.error("Failed to load state:", err);
+        appState.products = JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
+      }
     }
 
     function saveState() {
-      if (!window.firebaseDB) {
-        showToast("Firebase not loaded yet.", "error");
-        return;
-      }
-      const { db, ref, set } = window.firebaseDB;
-      const dbRef = ref(db, 'tylers_integrated_farm_pos');
-
-      set(dbRef, {
-        products: appState.products,
-        sales: appState.sales,
-        stockLogs: appState.stockLogs,
-        receiptCounter: appState.receiptCounter,
-        auth: appState.auth
-      }).then(() => {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
         const pillText = document.getElementById("saveStatusText");
         if (pillText) {
           const now = new Date();
           const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-          pillText.textContent = `Cloud Saved (${timeStr})`;
+          pillText.textContent = `Auto-Saved (${timeStr})`;
         }
-      }).catch((err) => {
-        console.error("Save error:", err);
-        showToast("Warning: Failed to save to Firebase online storage.", "error");
-      });
-
-      updateNavBadges();
-    }
-
-    function refreshActiveUI() {
-      const activeTabBtn = document.querySelector(".tab-btn.active");
-      if (activeTabBtn) {
-        const currentTab = activeTabBtn.dataset.tab;
-        if (currentTab === "pos") {
-          renderPOSProducts();
-        } else if (currentTab === "inventory") {
-          renderInventoryKPIs();
-          renderInventoryTable();
-          renderStockLogs();
-        } else if (currentTab === "reports") {
-          renderReports();
-        }
+      } catch (err) {
+        showToast("Warning: Failed to save to local storage.", "error");
       }
       updateNavBadges();
     }
@@ -1749,7 +1699,6 @@
         document.getElementById("activeUsernameText").textContent = appState.currentUsername || appState.currentUserRole;
         applyRolePermissions();
       }
-      refreshActiveUI();
     }
 
     function openLoginModal() {
@@ -1764,6 +1713,7 @@
     function logoutSession() {
       appState.currentUserRole = "";
       appState.currentUsername = "";
+      saveState();
       openLoginModal();
     }
 
@@ -1784,6 +1734,7 @@
       if (roleAuth && roleAuth.username.toLowerCase() === enteredUser && roleAuth.pin === enteredPin) {
         appState.currentUserRole = selectedRole;
         appState.currentUsername = roleAuth.username;
+        saveState();
 
         document.getElementById("activeRoleText").textContent = selectedRole;
         document.getElementById("activeUsernameText").textContent = roleAuth.username;
@@ -2018,4 +1969,803 @@
         cart[itemIndex].qty = available;
         showToast(`Max available stock: ${formatQty(available)} ${prod.unit}`, "warn");
       } else {
-        cart[itemIndex].qty = new
+        cart[itemIndex].qty = newQty;
+      }
+      renderCart();
+    }
+
+    function removeFromCart(productId) {
+      cart = cart.filter(c => c.productId !== productId);
+      renderCart();
+    }
+
+    function clearCart() {
+      cart = [];
+      document.getElementById("posAmountTendered").value = "";
+      document.getElementById("posCustomer").value = "";
+      document.getElementById("posNotes").value = "";
+      renderCart();
+    }
+
+    function renderCart() {
+      const container = document.getElementById("cartItemsContainer");
+      if (cart.length === 0) {
+        container.innerHTML = `<div class="cart-empty">Cart is empty. Tap products on the left.</div>`;
+        recalculateCartTotals();
+        return;
+      }
+
+      container.innerHTML = cart.map(item => {
+        const prod = appState.products.find(p => p.id === item.productId);
+        if (!prod) return "";
+        const lineTotal = round2(prod.price * item.qty);
+        return `
+          <div class="cart-item">
+            <div class="cart-item-info">
+              <div class="cart-item-name" title="${escapeHTML(prod.name)}">${escapeHTML(prod.name)}</div>
+              <div class="cart-item-sub">${formatPHP(prod.price)} / ${escapeHTML(prod.unit)}</div>
+            </div>
+            <div class="qty-controls">
+              <button type="button" class="qty-btn" onclick="updateCartQty('${prod.id}', -1)">-</button>
+              <input type="number" class="qty-input" step="0.01" min="0.01" max="${prod.stock}" value="${formatQty(item.qty)}" onchange="updateCartQty('${prod.id}', this.value, true)" />
+              <button type="button" class="qty-btn" onclick="updateCartQty('${prod.id}', 1)">+</button>
+            </div>
+            <div class="cart-item-total">${formatPHP(lineTotal)}</div>
+            <button type="button" class="qty-btn" style="color:var(--red-600); border-color:transparent; background:transparent;" onclick="removeFromCart('${prod.id}')">✕</button>
+          </div>
+        `;
+      }).join("");
+
+      recalculateCartTotals();
+    }
+
+    function recalculateCartTotals() {
+      let grandTotal = 0;
+      let itemCount = 0;
+
+      cart.forEach(item => {
+        const prod = appState.products.find(p => p.id === item.productId);
+        if (prod) {
+          grandTotal = round2(grandTotal + round2(prod.price * item.qty));
+          itemCount += 1;
+        }
+      });
+
+      document.getElementById("cartTotalItems").textContent = itemCount;
+      document.getElementById("cartGrandTotal").textContent = formatPHP(grandTotal);
+
+      const method = document.getElementById("posPaymentMethod").value;
+      const tenderedInput = document.getElementById("posAmountTendered");
+      const tendered = round2(parseFloat(tenderedInput.value) || 0);
+      const changeEl = document.getElementById("cartChange");
+
+      if (method === "Utang/Credit") {
+        changeEl.textContent = "₱0.00 (Credit)";
+        changeEl.style.color = "var(--amber-600)";
+      } else if (tendered > 0) {
+        const diff = round2(tendered - grandTotal);
+        changeEl.textContent = diff >= 0 ? formatPHP(diff) : `Short: ${formatPHP(Math.abs(diff))}`;
+        changeEl.style.color = diff >= 0 ? "var(--emerald-700)" : "var(--red-600)";
+      } else {
+        changeEl.textContent = "₱0.00";
+        changeEl.style.color = "var(--slate-700)";
+      }
+    }
+
+    function completeSale() {
+      if (cart.length === 0) {
+        showToast("No products in cart.", "error");
+        return;
+      }
+
+      const saleItems = [];
+      let totalRevenue = 0;
+      let totalCost = 0;
+
+      for (const item of cart) {
+        const prod = appState.products.find(p => p.id === item.productId);
+        if (!prod) {
+          showToast("Product not found.", "error");
+          return;
+        }
+        const qty = round2(item.qty);
+        if (qty <= 0 || qty > round2(prod.stock)) {
+          showToast(`Insufficient stock for ${prod.name}.`, "error");
+          return;
+        }
+
+        const lineRevenue = round2(prod.price * qty);
+        const lineCost = round2(prod.cost * qty);
+        totalRevenue = round2(totalRevenue + lineRevenue);
+        totalCost = round2(totalCost + lineCost);
+
+        saleItems.push({
+          productId: prod.id,
+          name: prod.name,
+          unit: prod.unit,
+          qty: qty,
+          unitCost: round2(prod.cost),
+          unitPrice: round2(prod.price),
+          lineRevenue,
+          lineCost
+        });
+      }
+
+      const method = document.getElementById("posPaymentMethod").value;
+      const rawTendered = parseFloat(document.getElementById("posAmountTendered").value);
+      const tendered = isNaN(rawTendered) ? (method === "Utang/Credit" ? 0 : totalRevenue) : round2(rawTendered);
+
+      if (method === "Cash" && !isNaN(rawTendered) && tendered < totalRevenue) {
+        showToast("Insufficient cash tendered.", "error");
+        return;
+      }
+
+      const change = method === "Utang/Credit" ? 0 : Math.max(0, round2(tendered - totalRevenue));
+      const customer = (document.getElementById("posCustomer").value || "").trim() || "Walk-in Customer";
+      const notes = (document.getElementById("posNotes").value || "").trim();
+
+      saleItems.forEach(sItem => {
+        const prod = appState.products.find(p => p.id === sItem.productId);
+        if (prod) {
+          prod.stock = Math.max(0, round2(prod.stock - sItem.qty));
+        }
+      });
+
+      const receiptNumber = `TIF-${appState.receiptCounter++}`;
+      const newSale = {
+        id: "sale_" + Date.now(),
+        receiptNumber,
+        timestamp: new Date().toISOString(),
+        customer,
+        cashierRole: appState.currentUserRole,
+        cashierUsername: appState.currentUsername,
+        paymentMethod: method,
+        amountTendered: tendered,
+        change,
+        notes,
+        items: saleItems,
+        totalRevenue,
+        totalCost,
+        profit: round2(totalRevenue - totalCost)
+      };
+
+      appState.sales.unshift(newSale);
+      saveState();
+
+      clearCart();
+      renderPOSProducts();
+      showToast(`Sale completed! Receipt #${receiptNumber}`);
+      viewReceipt(newSale.id);
+    }
+
+    function viewReceipt(saleId) {
+      const sale = appState.sales.find(s => s.id === saleId);
+      if (!sale) return;
+
+      const dt = new Date(sale.timestamp);
+      const dateStr = dt.toLocaleDateString("en-PH", { year: "numeric", month: "short", day: "numeric" });
+      const timeStr = dt.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
+
+      const itemsHTML = sale.items.map(it => `
+        <div style="margin-bottom:5px;">
+          <div><strong>${escapeHTML(it.name)}</strong></div>
+          <div class="receipt-line">
+            <span>${formatQty(it.qty)} ${escapeHTML(it.unit)} x ${formatPHP(it.unitPrice)}</span>
+            <span>${formatPHP(it.lineRevenue)}</span>
+          </div>
+        </div>
+      `).join("");
+
+      document.getElementById("receiptContent").innerHTML = `
+        <div class="receipt-center">
+          <strong style="font-size:1.02rem;">TYLER'S INTEGRATED FARM</strong><br/>
+          <span>Official Sales Receipt</span><br/>
+          <span>Receipt #: <strong>${escapeHTML(sale.receiptNumber)}</strong></span>
+        </div>
+        <div class="receipt-divider"></div>
+        <div class="receipt-line"><span>Date:</span><span>${dateStr} ${timeStr}</span></div>
+        <div class="receipt-line"><span>Customer:</span><span>${escapeHTML(sale.customer)}</span></div>
+        <div class="receipt-line"><span>Cashier:</span><span>${escapeHTML(sale.cashierUsername || sale.cashierRole || "admin")}</span></div>
+        <div class="receipt-line"><span>Payment:</span><span>${escapeHTML(sale.paymentMethod)}</span></div>
+        ${sale.notes ? `<div class="receipt-line"><span>Remarks:</span><span>${escapeHTML(sale.notes)}</span></div>` : ""}
+        <div class="receipt-divider"></div>
+        ${itemsHTML}
+        <div class="receipt-divider"></div>
+        <div class="receipt-line" style="font-size:0.95rem;">
+          <strong>TOTAL:</strong>
+          <strong>${formatPHP(sale.totalRevenue)}</strong>
+        </div>
+        <div class="receipt-line">
+          <span>Tendered:</span>
+          <span>${formatPHP(sale.amountTendered)}</span>
+        </div>
+        <div class="receipt-line">
+          <span>Change:</span>
+          <span>${formatPHP(sale.change)}</span>
+        </div>
+        <div class="receipt-divider"></div>
+        <div class="receipt-center" style="font-size:0.75rem;">
+          Thank you for supporting local harvest!<br/>
+          Tyler's Integrated Farm &bull; dandarz
+        </div>
+      `;
+      openModal("receiptModal");
+    }
+
+    function printReceiptModal() {
+      document.body.classList.add("printing-receipt");
+      window.print();
+      setTimeout(() => {
+        document.body.classList.remove("printing-receipt");
+      }, 500);
+    }
+
+    function renderInventoryKPIs() {
+      let costVal = 0;
+      let retailVal = 0;
+      let lowCount = 0;
+
+      appState.products.forEach(p => {
+        const st = round2(p.stock);
+        costVal = round2(costVal + round2(st * p.cost));
+        retailVal = round2(retailVal + round2(st * p.price));
+        if (st <= round2(p.reorder)) lowCount++;
+      });
+
+      document.getElementById("invKpiCount").textContent = appState.products.length;
+      document.getElementById("invKpiCostValue").textContent = formatPHP(costVal);
+      document.getElementById("invKpiRetailValue").textContent = formatPHP(retailVal);
+      document.getElementById("invKpiLowCount").textContent = lowCount;
+    }
+
+    function handleAddProduct(e) {
+      e.preventDefault();
+      if (appState.currentUserRole === "Cashier") {
+        showToast("Access Denied: Cashier cannot add products.", "error");
+        return;
+      }
+
+      const name = document.getElementById("newProdName").value.trim();
+      const category = document.getElementById("newProdCategory").value;
+      const unit = document.getElementById("newProdUnit").value;
+      const cost = round2(parseFloat(document.getElementById("newProdCost").value) || 0);
+      const price = round2(parseFloat(document.getElementById("newProdPrice").value) || 0);
+      const stock = round2(parseFloat(document.getElementById("newProdStock").value) || 0);
+      const reorder = round2(parseFloat(document.getElementById("newProdReorder").value) || 0);
+
+      if (!name) return;
+
+      const newProd = {
+        id: "prod_" + Date.now(),
+        name,
+        category,
+        unit,
+        cost,
+        price,
+        stock,
+        reorder
+      };
+
+      appState.products.push(newProd);
+      if (stock > 0) {
+        appState.stockLogs.unshift({
+          id: "log_" + Date.now(),
+          timestamp: new Date().toISOString(),
+          productName: name,
+          type: "NEW ITEM",
+          qty: stock,
+          note: `Initial stock (${unit})`
+        });
+      }
+
+      saveState();
+      e.target.reset();
+      document.getElementById("newProdReorder").value = "5";
+      renderInventoryKPIs();
+      renderInventoryTable();
+      renderStockLogs();
+      showToast(`Added product: ${name}`);
+    }
+
+    function renderInventoryTable() {
+      const tbody = document.getElementById("inventoryTableBody");
+      const query = (document.getElementById("invSearchInput").value || "").trim().toLowerCase();
+      const isCashier = appState.currentUserRole === "Cashier";
+
+      const actionHeader = document.getElementById("invActionsHeader");
+      if (actionHeader) {
+        actionHeader.style.display = isCashier ? "none" : "table-cell";
+      }
+
+      const filtered = appState.products.filter(p =>
+        !query || p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query)
+      );
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${isCashier ? 8 : 9}" style="text-align:center; padding:1.25rem; color:var(--slate-500);">No products found.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(p => {
+        const stock = round2(p.stock);
+        const profitUnit = round2(p.price - p.cost);
+        const isOut = stock <= 0;
+        const isLow = !isOut && stock <= round2(p.reorder);
+
+        const badge = isOut
+          ? `<span class="badge badge-out">Out of Stock</span>`
+          : isLow
+            ? `<span class="badge badge-low">Low (≤${formatQty(p.reorder)})</span>`
+            : `<span class="badge badge-ok">Healthy</span>`;
+
+        const actionTD = isCashier ? "" : `
+          <td>
+            <div style="display:flex; gap:0.3rem;">
+              <button type="button" class="btn btn-sm btn-primary" onclick="openRestockModal('${p.id}')">+ Stock</button>
+              <button type="button" class="btn btn-sm btn-outline" onclick="openEditProductModal('${p.id}')">Edit</button>
+              <button type="button" class="btn btn-sm btn-danger-outline" onclick="deleteProduct('${p.id}')">Del</button>
+            </div>
+          </td>
+        `;
+
+        return `
+          <tr>
+            <td><strong>${escapeHTML(p.name)}</strong></td>
+            <td>${escapeHTML(p.category)}</td>
+            <td>${escapeHTML(p.unit)}</td>
+            <td class="num">${formatPHP(p.cost)}</td>
+            <td class="num">${formatPHP(p.price)}</td>
+            <td class="num" style="color:${profitUnit >= 0 ? "var(--emerald-700)" : "var(--red-600)"}; font-weight:600;">${formatPHP(profitUnit)}</td>
+            <td class="num"><strong>${formatQty(stock)}</strong> ${escapeHTML(p.unit)}</td>
+            <td>${badge}</td>
+            ${actionTD}
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function openRestockModal(prodId) {
+      if (appState.currentUserRole === "Cashier") {
+        showToast("Access Denied: Cashier cannot modify stock.", "error");
+        return;
+      }
+      const prod = appState.products.find(p => p.id === prodId);
+      if (!prod) return;
+      document.getElementById("restockProdId").value = prod.id;
+      document.getElementById("restockProdTitle").textContent = `${prod.name} (${prod.unit})`;
+      document.getElementById("restockCurrentInfo").textContent = `Current Stock: ${formatQty(prod.stock)} ${prod.unit} | Cost: ${formatPHP(prod.cost)}`;
+      document.getElementById("restockQty").value = "";
+      document.getElementById("restockNewCost").value = prod.cost;
+      document.getElementById("restockNote").value = "";
+      openModal("restockModal");
+    }
+
+    function submitRestock(e) {
+      e.preventDefault();
+      const prodId = document.getElementById("restockProdId").value;
+      const addQty = round2(parseFloat(document.getElementById("restockQty").value) || 0);
+      const newCostRaw = parseFloat(document.getElementById("restockNewCost").value);
+      const note = document.getElementById("restockNote").value.trim() || "Restock / Harvest";
+
+      const prod = appState.products.find(p => p.id === prodId);
+      if (!prod || addQty <= 0) return;
+
+      prod.stock = round2(prod.stock + addQty);
+      if (!isNaN(newCostRaw) && newCostRaw >= 0) {
+        prod.cost = round2(newCostRaw);
+      }
+
+      appState.stockLogs.unshift({
+        id: "log_" + Date.now(),
+        timestamp: new Date().toISOString(),
+        productName: prod.name,
+        type: "STOCK-IN",
+        qty: addQty,
+        note: `${note} (+${formatQty(addQty)} ${prod.unit})`
+      });
+
+      saveState();
+      closeModal("restockModal");
+      renderInventoryKPIs();
+      renderInventoryTable();
+      renderStockLogs();
+      showToast(`Added ${formatQty(addQty)} ${prod.unit} to ${prod.name}.`);
+    }
+
+    function openEditProductModal(prodId) {
+      if (appState.currentUserRole === "Cashier") {
+        showToast("Access Denied: Cashier cannot edit products.", "error");
+        return;
+      }
+      const prod = appState.products.find(p => p.id === prodId);
+      if (!prod) return;
+      document.getElementById("editProdId").value = prod.id;
+      document.getElementById("editProdName").value = prod.name;
+      document.getElementById("editProdCategory").value = prod.category;
+      document.getElementById("editProdUnit").value = prod.unit;
+      document.getElementById("editProdCost").value = prod.cost;
+      document.getElementById("editProdPrice").value = prod.price;
+      document.getElementById("editProdStock").value = prod.stock;
+      document.getElementById("editProdReorder").value = prod.reorder;
+      openModal("editProductModal");
+    }
+
+    function submitEditProduct(e) {
+      e.preventDefault();
+      const prodId = document.getElementById("editProdId").value;
+      const prod = appState.products.find(p => p.id === prodId);
+      if (!prod) return;
+
+      prod.name = document.getElementById("editProdName").value.trim();
+      prod.category = document.getElementById("editProdCategory").value;
+      prod.unit = document.getElementById("editProdUnit").value;
+      prod.cost = round2(parseFloat(document.getElementById("editProdCost").value) || 0);
+      prod.price = round2(parseFloat(document.getElementById("editProdPrice").value) || 0);
+      prod.stock = round2(parseFloat(document.getElementById("editProdStock").value) || 0);
+      prod.reorder = round2(parseFloat(document.getElementById("editProdReorder").value) || 0);
+
+      saveState();
+      closeModal("editProductModal");
+      renderInventoryKPIs();
+      renderInventoryTable();
+      showToast(`Updated ${prod.name}.`);
+    }
+
+    function deleteProduct(prodId) {
+      if (appState.currentUserRole === "Cashier") {
+        showToast("Access Denied: Cashier cannot delete products.", "error");
+        return;
+      }
+      const prod = appState.products.find(p => p.id === prodId);
+      if (!prod) return;
+      showConfirm(
+        "Delete Product?",
+        `Are you sure you want to delete "${prod.name}"?`,
+        () => {
+          appState.products = appState.products.filter(p => p.id !== prodId);
+          cart = cart.filter(c => c.productId !== prodId);
+          saveState();
+          renderInventoryKPIs();
+          renderInventoryTable();
+          showToast(`Deleted ${prod.name}.`, "warn");
+        }
+      );
+    }
+
+    function renderStockLogs() {
+      const tbody = document.getElementById("stockLogsTableBody");
+      const recent = appState.stockLogs.slice(0, 15);
+      if (recent.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--slate-500);">No stock logs yet.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = recent.map(log => {
+        const dt = new Date(log.timestamp);
+        const formatted = dt.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) + " " +
+                          dt.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
+        return `
+          <tr>
+            <td>${formatted}</td>
+            <td><strong>${escapeHTML(log.productName)}</strong></td>
+            <td><span class="badge badge-ok">${escapeHTML(log.type)}</span></td>
+            <td class="num">${log.qty > 0 ? "+" + formatQty(log.qty) : "-"}</td>
+            <td>${escapeHTML(log.note)}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function handleReportPresetChange() {
+      const preset = document.getElementById("repDatePreset").value;
+      const isCustom = preset === "custom";
+      document.getElementById("customDateFromWrap").style.display = isCustom ? "block" : "none";
+      document.getElementById("customDateToWrap").style.display = isCustom ? "block" : "none";
+      renderReports();
+    }
+
+    function getFilteredSales() {
+      const preset = document.getElementById("repDatePreset").value;
+      const payFilter = document.getElementById("repPaymentFilter").value;
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+      return appState.sales.filter(sale => {
+        if (payFilter !== "All" && sale.paymentMethod !== payFilter) return false;
+
+        const saleDate = new Date(sale.timestamp);
+        if (preset === "today") {
+          return saleDate >= startOfToday;
+        } else if (preset === "week") {
+          const day = startOfToday.getDay();
+          const startOfWeek = new Date(startOfToday);
+          startOfWeek.setDate(startOfToday.getDate() - day);
+          return saleDate >= startOfWeek;
+        } else if (preset === "month") {
+          const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+          return saleDate >= startOfMonth;
+        } else if (preset === "custom") {
+          const fromStr = document.getElementById("repDateFrom").value;
+          const toStr = document.getElementById("repDateTo").value;
+          if (fromStr) {
+            const fromD = new Date(fromStr + "T00:00:00");
+            if (saleDate < fromD) return false;
+          }
+          if (toStr) {
+            const toD = new Date(toStr + "T23:59:59");
+            if (saleDate > toD) return false;
+          }
+        }
+        return true;
+      });
+    }
+
+    function renderReports() {
+      const filteredSales = getFilteredSales();
+
+      let grossSales = 0;
+      let totalCost = 0;
+      let netProfit = 0;
+
+      const perfMap = {};
+
+      filteredSales.forEach(sale => {
+        grossSales = round2(grossSales + sale.totalRevenue);
+        totalCost = round2(totalCost + sale.totalCost);
+        netProfit = round2(netProfit + sale.profit);
+
+        sale.items.forEach(it => {
+          if (!perfMap[it.productId]) {
+            const liveProd = appState.products.find(p => p.id === it.productId);
+            perfMap[it.productId] = {
+              name: it.name,
+              category: liveProd ? liveProd.category : "-",
+              unit: it.unit,
+              qtySold: 0,
+              revenue: 0,
+              cost: 0,
+              profit: 0,
+              remainingStock: liveProd ? liveProd.stock : 0
+            };
+          }
+          const rec = perfMap[it.productId];
+          rec.qtySold = round2(rec.qtySold + it.qty);
+          rec.revenue = round2(rec.revenue + it.lineRevenue);
+          rec.cost = round2(rec.cost + it.lineCost);
+          rec.profit = round2(rec.profit + round2(it.lineRevenue - it.lineCost));
+        });
+      });
+
+      const margin = grossSales > 0 ? ((netProfit / grossSales) * 100).toFixed(1) : "0.0";
+      document.getElementById("repKpiGross").textContent = formatPHP(grossSales);
+      document.getElementById("repKpiCost").textContent = formatPHP(totalCost);
+      document.getElementById("repKpiProfit").textContent = formatPHP(netProfit);
+      document.getElementById("repKpiMargin").textContent = `Margin: ${margin}%`;
+      document.getElementById("repKpiTxCount").textContent = filteredSales.length;
+
+      const presetSelect = document.getElementById("repDatePreset");
+      document.getElementById("repKpiRangeLabel").textContent = presetSelect.options[presetSelect.selectedIndex].text;
+
+      const breakdownBody = document.getElementById("productBreakdownBody");
+      const perfList = Object.values(perfMap).sort((a, b) => b.revenue - a.revenue);
+
+      if (perfList.length === 0) {
+        breakdownBody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:1.2rem; color:var(--slate-500);">No sales for this period.</td></tr>`;
+      } else {
+        breakdownBody.innerHTML = perfList.map(r => `
+          <tr>
+            <td><strong>${escapeHTML(r.name)}</strong></td>
+            <td>${escapeHTML(r.category)}</td>
+            <td class="num">${formatQty(r.qtySold)} ${escapeHTML(r.unit)}</td>
+            <td class="num"><strong>${formatPHP(r.revenue)}</strong></td>
+            <td class="num">${formatPHP(r.cost)}</td>
+            <td class="num" style="color:var(--emerald-700); font-weight:700;">${formatPHP(r.profit)}</td>
+            <td class="num">${formatQty(r.remainingStock)} ${escapeHTML(r.unit)}</td>
+          </tr>
+        `).join("");
+      }
+
+      const ledgerBody = document.getElementById("salesLedgerBody");
+      const isCashier = appState.currentUserRole === "Cashier";
+      const ledgerActionHeader = document.getElementById("ledgerActionsHeader");
+      if (ledgerActionHeader) {
+        ledgerActionHeader.style.display = isCashier ? "none" : "table-cell";
+      }
+
+      if (filteredSales.length === 0) {
+        ledgerBody.innerHTML = `<tr><td colspan="${isCashier ? 7 : 8}" style="text-align:center; padding:1.25rem; color:var(--slate-500);">No transactions found.</td></tr>`;
+      } else {
+        ledgerBody.innerHTML = filteredSales.map(sale => {
+          const dt = new Date(sale.timestamp);
+          const dateStr = dt.toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) + " " +
+                          dt.toLocaleTimeString("en-PH", { hour: "2-digit", minute: "2-digit" });
+          const summary = sale.items.map(i => `${formatQty(i.qty)} ${i.unit} ${i.name}`).join(", ");
+          const payBadge = sale.paymentMethod === "Utang/Credit"
+            ? `<span class="badge badge-low">${escapeHTML(sale.paymentMethod)}</span>`
+            : `<span class="badge badge-ok">${escapeHTML(sale.paymentMethod)}</span>`;
+
+          const actionTD = isCashier ? "" : `
+            <td class="no-print">
+              <div style="display:flex; gap:0.3rem;">
+                <button type="button" class="btn btn-sm btn-outline" onclick="viewReceipt('${sale.id}')">Receipt</button>
+                <button type="button" class="btn btn-sm btn-danger-outline" onclick="voidSale('${sale.id}')">Void</button>
+              </div>
+            </td>
+          `;
+
+          return `
+            <tr>
+              <td><strong>${escapeHTML(sale.receiptNumber)}</strong></td>
+              <td style="white-space:nowrap;">${dateStr}</td>
+              <td>${escapeHTML(sale.customer)}</td>
+              <td style="max-width:240px; overflow:hidden; text-overflow:ellipsis;">${escapeHTML(summary)}</td>
+              <td>${payBadge}</td>
+              <td class="num"><strong>${formatPHP(sale.totalRevenue)}</strong></td>
+              <td class="num" style="color:var(--emerald-700); font-weight:700;">${formatPHP(sale.profit)}</td>
+              ${actionTD}
+            </tr>
+          `;
+        }).join("");
+      }
+    }
+
+    function voidSale(saleId) {
+      if (appState.currentUserRole === "Cashier") {
+        showToast("Access Denied: Cashier cannot void sales.", "error");
+        return;
+      }
+      const sale = appState.sales.find(s => s.id === saleId);
+      if (!sale) return;
+
+      showConfirm(
+        `Void Receipt #${sale.receiptNumber}?`,
+        "Voiding will return the sold items back to current stock.",
+        () => {
+          sale.items.forEach(it => {
+            const prod = appState.products.find(p => p.id === it.productId);
+            if (prod) {
+              prod.stock = round2(prod.stock + it.qty);
+            }
+          });
+
+          appState.stockLogs.unshift({
+            id: "log_" + Date.now(),
+            timestamp: new Date().toISOString(),
+            productName: `Receipt #${sale.receiptNumber}`,
+            type: "VOID RESTORE",
+            qty: 0,
+            note: `Restored stock from voided sale (${sale.customer})`
+          });
+
+          appState.sales = appState.sales.filter(s => s.id !== saleId);
+          saveState();
+          renderReports();
+          showToast(`Voided Receipt #${sale.receiptNumber} & restored stock.`, "warn");
+        }
+      );
+    }
+
+    function exportBackupJSON() {
+      const dataStr = JSON.stringify(appState, null, 2);
+      const blob = new Blob([dataStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const dateTag = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `Tylers_Farm_Backup_${dateTag}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast("JSON backup downloaded.");
+    }
+
+    function importBackupJSON(event) {
+      if (appState.currentUserRole === "Cashier") {
+        showToast("Access Denied: Admin role required.", "error");
+        return;
+      }
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const parsed = JSON.parse(e.target.result);
+          if (!Array.isArray(parsed.products) || !Array.isArray(parsed.sales)) {
+            throw new Error("Invalid format");
+          }
+          appState = {
+            products: parsed.products,
+            sales: parsed.sales,
+            stockLogs: Array.isArray(parsed.stockLogs) ? parsed.stockLogs : [],
+            receiptCounter: typeof parsed.receiptCounter === "number" ? parsed.receiptCounter : 1001,
+            auth: parsed.auth || appState.auth,
+            currentUserRole: parsed.currentUserRole || appState.currentUserRole,
+            currentUsername: parsed.currentUsername || appState.currentUsername
+          };
+          cart = [];
+          saveState();
+          renderPOSProducts();
+          renderCart();
+          renderInventoryKPIs();
+          renderInventoryTable();
+          renderReports();
+          showToast("Data restored successfully!");
+        } catch (err) {
+          showToast("Error: Invalid backup file.", "error");
+        }
+        event.target.value = "";
+      };
+      reader.readAsText(file);
+    }
+
+    function csvEscape(val) {
+      const s = String(val ?? "");
+      if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    }
+
+    function exportAllCSV() {
+      const lines = [];
+      lines.push("TYLER'S INTEGRATED FARM - INVENTORY & SALES REPORT");
+      lines.push(`Generated On,${csvEscape(new Date().toLocaleString("en-PH"))}`);
+      lines.push(`App developed by,dandarz`);
+      lines.push("");
+
+      lines.push("=== CURRENT INVENTORY ===");
+      lines.push("Product Name,Category,Unit,Cost Price (PHP),Selling Price (PHP),Stock,Reorder Level,Stock Cost Value (PHP)");
+      appState.products.forEach(p => {
+        const val = round2(p.stock * p.cost);
+        lines.push([
+          csvEscape(p.name),
+          csvEscape(p.category),
+          csvEscape(p.unit),
+          round2(p.cost).toFixed(2),
+          round2(p.price).toFixed(2),
+          formatQty(p.stock),
+          formatQty(p.reorder),
+          val.toFixed(2)
+        ].join(","));
+      });
+
+      lines.push("");
+      lines.push("=== SALES HISTORY ===");
+      lines.push("Receipt #,Date & Time,Customer,Cashier,Payment Method,Items Sold,Revenue (PHP),Cost (PHP),Profit (PHP),Notes");
+      appState.sales.forEach(s => {
+        const itemsSummary = s.items.map(i => `${formatQty(i.qty)} ${i.unit} ${i.name}`).join(" | ");
+        lines.push([
+          csvEscape(s.receiptNumber),
+          csvEscape(new Date(s.timestamp).toLocaleString("en-PH")),
+          csvEscape(s.customer),
+          csvEscape(s.cashierUsername || s.cashierRole || "admin"),
+          csvEscape(s.paymentMethod),
+          csvEscape(itemsSummary),
+          round2(s.totalRevenue).toFixed(2),
+          round2(s.totalCost).toFixed(2),
+          round2(s.profit).toFixed(2),
+          csvEscape(s.notes)
+        ].join(","));
+      });
+
+      const csvContent = "\uFEFF" + lines.join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const dateTag = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `Tylers_Farm_Report_${dateTag}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast("CSV report exported!");
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      loadState();
+      updateNavBadges();
+      renderPOSProducts();
+      renderCart();
+      checkAuthentication();
+    });
+  </script>
+</body>
+</html>
