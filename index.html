@@ -1,0 +1,2021 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>TYLER'S INTEGRATED FARM — POS, Inventory & Sales Report</title>
+  
+  <!-- ========================================================================
+       FIREBASE SDKs (Compat / Modular via CDN)
+       ======================================================================== -->
+  <script type="module">
+    // Import the functions you need from the SDKs you need
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js";
+    import { getDatabase, ref, set, get, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+
+    // Your web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyDCHrt3XeP-X4tJcHH3uGCqapQZYzpSCPs",
+      authDomain: "tif-pos.firebaseapp.com",
+      databaseURL: "https://tif-pos-default-rtdb.asia-southeast1.firebasedatabase.app", // Pinalitan / Idinagdag para sa RTDB online sync
+      projectId: "tif-pos",
+      storageBucket: "tif-pos.firebasestorage.app",
+      messagingSenderId: "114069988700",
+      appId: "1:114069988700:web:09533fa88f0f68e90d8d99",
+      measurementId: "G-XZ5F93XDXC"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const db = getDatabase(app);
+
+    // I-expose sa global window para magamit ng app scripts sa ibaba
+    window.firebaseDB = { db, ref, set, get, onValue };
+    window.dispatchEvent(new Event('firebase-ready'));
+  </script>
+
+  <style>
+    /* ==========================================================================
+       DESIGN TOKENS & RESET (MOBILE-FIRST & CROSS-PLATFORM)
+       ========================================================================== */
+    :root {
+      --emerald-950: #022c22;
+      --emerald-900: #064e3b;
+      --emerald-800: #065f46;
+      --emerald-700: #047857;
+      --emerald-600: #059669;
+      --emerald-500: #10b981;
+      --emerald-100: #d1fae5;
+      --emerald-50:  #ecfdf5;
+
+      --amber-600:   #d97706;
+      --amber-100:   #fef3c7;
+      --amber-50:    #fffbeb;
+
+      --red-600:     #dc2626;
+      --red-100:     #fee2e2;
+      --red-50:      #fef2f2;
+
+      --slate-900:   #0f172a;
+      --slate-800:   #1e293b;
+      --slate-700:   #334155;
+      --slate-600:   #475569;
+      --slate-500:   #64748b;
+      --slate-400:   #94a3b8;
+      --slate-300:   #cbd5e1;
+      --slate-200:   #e2e8f0;
+      --slate-100:   #f1f5f9;
+      --slate-50:    #f8fafc;
+      --white:       #ffffff;
+
+      --radius-sm:   8px;
+      --radius-md:   12px;
+      --radius-lg:   16px;
+      --shadow-sm:   0 1px 2px rgba(15, 23, 42, 0.06);
+      --shadow-md:   0 4px 12px rgba(15, 23, 42, 0.08);
+      --shadow-lg:   0 12px 28px rgba(15, 23, 42, 0.14);
+      --font-sans:   -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--slate-100);
+      color: var(--slate-800);
+      line-height: 1.5;
+      min-height: 100vh;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ==========================================================================
+       HEADER & TOP NAVIGATION
+       ========================================================================== */
+    .app-header {
+      background: linear-gradient(135deg, var(--emerald-950) 0%, var(--emerald-800) 100%);
+      color: var(--white);
+      padding: 0.75rem 1rem;
+      box-shadow: var(--shadow-md);
+      position: sticky;
+      top: 0;
+      z-index: 40;
+    }
+
+    .header-inner {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    @media (min-width: 768px) {
+      .header-inner {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+      }
+    }
+
+    .brand-box {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .brand-title {
+      font-size: 1rem;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      line-height: 1.2;
+    }
+
+    .brand-sub {
+      font-size: 0.75rem;
+      color: var(--emerald-100);
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 2px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: rgba(16, 185, 129, 0.2);
+      border: 1px solid rgba(16, 185, 129, 0.45);
+      color: #a7f3d0;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #34d399;
+      box-shadow: 0 0 6px #34d399;
+    }
+
+    .header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .user-badge {
+      background: rgba(255, 255, 255, 0.15);
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      padding: 0.25rem 0.6rem;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.78rem;
+      color: var(--white);
+      font-weight: 600;
+    }
+
+    /* ==========================================================================
+       BUTTONS & INPUTS (TOUCH FRIENDLY)
+       ========================================================================== */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      padding: 0.55rem 0.85rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: all 0.15s ease;
+      text-decoration: none;
+      white-space: nowrap;
+      min-height: 40px;
+      touch-action: manipulation;
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn-primary {
+      background: var(--emerald-600);
+      color: var(--white);
+      box-shadow: var(--shadow-sm);
+    }
+    .btn-primary:hover { background: var(--emerald-700); }
+
+    .btn-dark {
+      background: var(--slate-800);
+      color: var(--white);
+    }
+    .btn-dark:hover { background: var(--slate-900); }
+
+    .btn-ghost-light {
+      background: rgba(255, 255, 255, 0.12);
+      color: var(--white);
+      border-color: rgba(255, 255, 255, 0.22);
+      font-size: 0.75rem;
+      padding: 0.35rem 0.6rem;
+      min-height: 32px;
+    }
+    .btn-ghost-light:hover { background: rgba(255, 255, 255, 0.22); }
+
+    .btn-outline {
+      background: var(--white);
+      color: var(--slate-700);
+      border-color: var(--slate-300);
+    }
+    .btn-outline:hover { background: var(--slate-50); border-color: var(--slate-400); }
+
+    .btn-danger-outline {
+      background: var(--white);
+      color: var(--red-600);
+      border-color: var(--red-100);
+    }
+    .btn-danger-outline:hover { background: var(--red-50); border-color: var(--red-600); }
+
+    .btn-sm {
+      padding: 0.3rem 0.55rem;
+      font-size: 0.75rem;
+      min-height: 32px;
+    }
+
+    .btn-lg {
+      padding: 0.75rem 1rem;
+      font-size: 1rem;
+      font-weight: 700;
+      width: 100%;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 0.65rem 0.75rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--slate-300);
+      background: var(--white);
+      color: var(--slate-800);
+      font-size: 16px;
+      font-family: inherit;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: var(--emerald-600);
+      box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.15);
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--slate-600);
+      margin-bottom: 0.3rem;
+    }
+
+    /* ==========================================================================
+       MAIN CONTAINER & TABS
+       ========================================================================== */
+    .main-wrap {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0.75rem 0.75rem 3rem;
+      flex: 1;
+      width: 100%;
+    }
+
+    @media (min-width: 768px) {
+      .main-wrap {
+        padding: 1.25rem 1.25rem 3rem;
+      }
+    }
+
+    .tab-bar {
+      display: flex;
+      gap: 0.4rem;
+      background: var(--white);
+      padding: 0.4rem;
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      border: 1px solid var(--slate-200);
+      margin-bottom: 1rem;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .tab-btn {
+      flex: 1;
+      min-width: 140px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      padding: 0.65rem 0.8rem;
+      border: none;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--slate-600);
+      font-weight: 700;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover {
+      background: var(--slate-100);
+      color: var(--slate-900);
+    }
+
+    .tab-btn.active {
+      background: var(--emerald-700);
+      color: var(--white);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .tab-badge {
+      background: rgba(255, 255, 255, 0.22);
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+    }
+    .tab-btn:not(.active) .tab-badge {
+      background: var(--slate-200);
+      color: var(--slate-700);
+    }
+
+    .tab-panel {
+      display: none;
+    }
+    .tab-panel.active {
+      display: block;
+      animation: fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ==========================================================================
+       CARDS & KPI GRIDS
+       ========================================================================== */
+    .card {
+      background: var(--white);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--slate-200);
+      box-shadow: var(--shadow-sm);
+      padding: 1rem;
+    }
+
+    @media (min-width: 768px) {
+      .card { padding: 1.15rem; }
+    }
+
+    .card-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-bottom: 0.85rem;
+      padding-bottom: 0.65rem;
+      border-bottom: 1px solid var(--slate-100);
+    }
+
+    .card-title {
+      font-size: 0.98rem;
+      font-weight: 700;
+      color: var(--slate-900);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    @media (min-width: 900px) {
+      .kpi-grid {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.9rem;
+        margin-bottom: 1.25rem;
+      }
+    }
+
+    .kpi-card {
+      background: var(--white);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--slate-200);
+      padding: 0.85rem 1rem;
+      box-shadow: var(--shadow-sm);
+      border-left: 4px solid var(--emerald-600);
+    }
+
+    .kpi-card.amber { border-left-color: var(--amber-600); }
+    .kpi-card.red { border-left-color: var(--red-600); }
+    .kpi-card.dark { border-left-color: var(--slate-800); }
+
+    .kpi-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--slate-500);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .kpi-value {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--slate-900);
+      margin-top: 0.2rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    @media (min-width: 768px) {
+      .kpi-value { font-size: 1.5rem; }
+    }
+
+    .kpi-sub {
+      font-size: 0.72rem;
+      color: var(--slate-500);
+      margin-top: 0.15rem;
+    }
+
+    /* ==========================================================================
+       POS LAYOUT (TAB 1)
+       ========================================================================== */
+    .pos-layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+      align-items: start;
+    }
+
+    @media (min-width: 1024px) {
+      .pos-layout {
+        grid-template-columns: 1fr 420px;
+        gap: 1.25rem;
+      }
+    }
+
+    .sample-banner {
+      background: var(--amber-50);
+      border: 1px solid #fde68a;
+      color: #92400e;
+      padding: 0.6rem 0.85rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.8rem;
+      margin-bottom: 0.85rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .filter-row {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      margin-bottom: 0.85rem;
+    }
+
+    @media (min-width: 640px) {
+      .filter-row {
+        flex-direction: row;
+        align-items: center;
+      }
+    }
+
+    .search-box {
+      flex: 1;
+    }
+
+    .cat-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+
+    .cat-pill {
+      padding: 0.4rem 0.75rem;
+      border-radius: 999px;
+      border: 1px solid var(--slate-300);
+      background: var(--white);
+      color: var(--slate-700);
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+
+    .cat-pill:hover {
+      border-color: var(--emerald-600);
+      color: var(--emerald-700);
+    }
+
+    .cat-pill.active {
+      background: var(--emerald-700);
+      border-color: var(--emerald-700);
+      color: var(--white);
+    }
+
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.65rem;
+    }
+
+    @media (min-width: 580px) {
+      .product-grid {
+        grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      }
+    }
+
+    .prod-card {
+      background: var(--white);
+      border: 1.5px solid var(--slate-200);
+      border-radius: var(--radius-md);
+      padding: 0.75rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      user-select: none;
+    }
+
+    .prod-card:hover:not(.out-of-stock) {
+      border-color: var(--emerald-500);
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+
+    .prod-card:active:not(.out-of-stock) {
+      transform: scale(0.98);
+    }
+
+    .prod-card.out-of-stock {
+      opacity: 0.58;
+      cursor: not-allowed;
+      background: var(--slate-50);
+    }
+
+    .prod-cat {
+      font-size: 0.65rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--emerald-700);
+      margin-bottom: 0.2rem;
+    }
+
+    .prod-name {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--slate-900);
+      line-height: 1.25;
+      margin-bottom: 0.35rem;
+    }
+
+    .prod-price {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--emerald-800);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .prod-price span {
+      font-size: 0.74rem;
+      font-weight: 500;
+      color: var(--slate-500);
+    }
+
+    .prod-stock {
+      margin-top: 0.5rem;
+      padding-top: 0.4rem;
+      border-top: 1px dashed var(--slate-200);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-size: 0.68rem;
+      font-weight: 700;
+    }
+
+    .badge-ok { background: var(--emerald-100); color: var(--emerald-800); }
+    .badge-low { background: var(--amber-100); color: #92400e; }
+    .badge-out { background: var(--red-100); color: var(--red-600); }
+
+    /* Cart Panel */
+    .cart-panel {
+      position: static;
+    }
+    @media (min-width: 1024px) {
+      .cart-panel {
+        position: sticky;
+        top: 76px;
+      }
+    }
+
+    .cart-items {
+      max-height: 280px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      margin-bottom: 0.85rem;
+      border: 1px solid var(--slate-200);
+      border-radius: var(--radius-sm);
+      background: var(--slate-50);
+    }
+
+    .cart-empty {
+      padding: 1.75rem 1rem;
+      text-align: center;
+      color: var(--slate-500);
+      font-size: 0.82rem;
+    }
+
+    .cart-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.4rem;
+      padding: 0.6rem;
+      background: var(--white);
+      border-bottom: 1px solid var(--slate-200);
+    }
+    .cart-item:last-child { border-bottom: none; }
+
+    .cart-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .cart-item-name {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--slate-900);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .cart-item-sub {
+      font-size: 0.72rem;
+      color: var(--slate-500);
+    }
+
+    .qty-controls {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .qty-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      border: 1px solid var(--slate-300);
+      background: var(--slate-100);
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .qty-btn:hover { background: var(--slate-200); }
+
+    .qty-input {
+      width: 48px;
+      height: 30px;
+      text-align: center;
+      border: 1px solid var(--slate-300);
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .cart-item-total {
+      font-weight: 700;
+      font-size: 0.85rem;
+      color: var(--slate-900);
+      min-width: 65px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .checkout-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.6rem;
+      margin-bottom: 0.65rem;
+    }
+
+    @media (min-width: 480px) {
+      .checkout-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .totals-box {
+      background: var(--emerald-50);
+      border: 1px solid var(--emerald-100);
+      border-radius: var(--radius-sm);
+      padding: 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+      margin-bottom: 0.3rem;
+    }
+    .total-row:last-child { margin-bottom: 0; }
+
+    .total-row.grand {
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: var(--emerald-900);
+      padding-top: 0.35rem;
+      border-top: 1px dashed var(--emerald-500);
+      margin-top: 0.3rem;
+    }
+
+    /* ==========================================================================
+       TABLES (INVENTORY & REPORTS)
+       ========================================================================== */
+    .table-responsive {
+      width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      border: 1px solid var(--slate-200);
+      border-radius: var(--radius-sm);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    th {
+      background: var(--slate-50);
+      color: var(--slate-600);
+      font-weight: 700;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      padding: 0.65rem 0.75rem;
+      border-bottom: 1px solid var(--slate-200);
+    }
+
+    td {
+      padding: 0.65rem 0.75rem;
+      border-bottom: 1px solid var(--slate-100);
+      vertical-align: middle;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--slate-50); }
+
+    .num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .inv-form-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.65rem;
+      align-items: end;
+    }
+
+    @media (min-width: 640px) {
+      .inv-form-grid {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      }
+    }
+
+    /* ==========================================================================
+       MODALS & LOGIN BACKDROP
+       ========================================================================== */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(2px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 0.75rem;
+      z-index: 100;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+      animation: fadeIn 0.15s ease;
+    }
+
+    .modal-box {
+      background: var(--white);
+      border-radius: var(--radius-lg);
+      max-width: 440px;
+      width: 100%;
+      max-height: 90vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      box-shadow: var(--shadow-lg);
+      padding: 1.15rem;
+    }
+
+    /* LOGIN MODAL SPECIAL STYLE */
+    #loginModal {
+      background: linear-gradient(135deg, var(--emerald-950) 0%, var(--emerald-900) 100%);
+      z-index: 300;
+    }
+
+    .receipt-paper {
+      background: #fffdf9;
+      border: 1px dashed var(--slate-400);
+      border-radius: var(--radius-sm);
+      padding: 1rem;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 0.82rem;
+      color: #111827;
+    }
+
+    .receipt-center { text-align: center; }
+    .receipt-divider {
+      border-top: 1px dashed #9ca3af;
+      margin: 0.55rem 0;
+    }
+    .receipt-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 0.4rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .toast-container {
+      position: fixed;
+      bottom: 1rem;
+      right: 1rem;
+      left: 1rem;
+      z-index: 400;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      max-width: 360px;
+      margin: 0 auto;
+    }
+
+    @media (min-width: 400px) {
+      .toast-container {
+        left: auto;
+      }
+    }
+
+    .toast {
+      background: var(--slate-900);
+      color: var(--white);
+      padding: 0.7rem 0.9rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.82rem;
+      font-weight: 600;
+      box-shadow: var(--shadow-lg);
+      border-left: 4px solid var(--emerald-500);
+      animation: fadeIn 0.2s ease;
+    }
+    .toast.error { border-left-color: var(--red-600); }
+    .toast.warn { border-left-color: var(--amber-600); }
+
+    /* FOOTER SIGNATURE */
+    .app-footer {
+      background: var(--emerald-950);
+      color: var(--emerald-100);
+      text-align: center;
+      padding: 0.85rem;
+      font-size: 0.78rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      margin-top: auto;
+    }
+
+    /* ==========================================================================
+       PRINT STYLES
+       ========================================================================== */
+    @media print {
+      body { background: #fff; }
+      .app-header, .tab-bar, .no-print, .toast-container, .app-footer { display: none !important; }
+      .main-wrap { padding: 0; max-width: 100%; }
+      .card, .kpi-card { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
+      body.printing-receipt .main-wrap { display: none !important; }
+      body.printing-receipt .modal-backdrop {
+        position: static;
+        background: none;
+        padding: 0;
+      }
+      body.printing-receipt .modal-box {
+        box-shadow: none;
+        max-width: 320px;
+        margin: 0 auto;
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ========================================================================
+       LOGIN MODAL
+       ======================================================================== -->
+  <div class="modal-backdrop" id="loginModal">
+    <div class="modal-box" style="max-width: 360px; border-top: 5px solid var(--emerald-500);">
+      <div style="text-align: center; margin-bottom: 1.1rem;">
+        <div style="width: 46px; height: 46px; background: var(--emerald-50); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 0.65rem;">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2.2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <h2 style="font-size: 1.15rem; font-weight: 800; color: var(--slate-900);">TYLER'S INTEGRATED FARM</h2>
+        <p style="font-size: 0.78rem; color: var(--slate-500); margin-top: 2px;">Enter your credentials to access</p>
+      </div>
+
+      <form onsubmit="handleLoginSubmit(event)">
+        <div style="margin-bottom: 0.75rem;">
+          <label class="form-label" for="loginRole">Account Role</label>
+          <select id="loginRole" class="form-control" onchange="updateLoginUserPlaceholder()">
+            <option value="Admin">Admin (Full Access)</option>
+            <option value="Cashier">Cashier (POS Only)</option>
+          </select>
+        </div>
+
+        <div style="margin-bottom: 0.75rem;">
+          <label class="form-label" for="loginUsername">Username</label>
+          <input type="text" id="loginUsername" class="form-control" required placeholder="Enter username..." />
+        </div>
+
+        <div style="margin-bottom: 1.1rem;">
+          <label class="form-label" for="loginPin">Security PIN / Password</label>
+          <input type="password" id="loginPin" class="form-control" autocomplete="current-password" required placeholder="Enter PIN..." />
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-lg">Login / Enter</button>
+      </form>
+
+      <div style="margin-top: 0.85rem; font-size: 0.72rem; color: var(--emerald-100); text-align: center; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 0.65rem;">
+        Default Credentials — Admin: <strong>admin / 1234</strong> | Cashier: <strong>cashier / 5678</strong>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       HEADER
+       ======================================================================== -->
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand-box">
+        <div class="brand-logo" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/>
+            <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-title">TYLER'S INTEGRATED FARM</div>
+          <div class="brand-sub">
+            <span>POS, Inventory &amp; Sales Report</span>
+            <span class="status-pill" id="saveStatusPill">
+              <span class="status-dot"></span>
+              <span id="saveStatusText">Connecting Cloud...</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-actions no-print">
+        <div class="user-badge" id="headerUserBadge">
+          <span><strong id="activeRoleText">Admin</strong> (<span id="activeUsernameText">admin</span>)</span>
+          <button type="button" class="btn btn-sm btn-ghost-light" onclick="openSettingsModal()" title="Change Username/PIN">Settings</button>
+          <button type="button" class="btn btn-sm btn-ghost-light" onclick="logoutSession()" title="Logout">Logout</button>
+        </div>
+        <button type="button" class="btn btn-ghost-light" onclick="exportBackupJSON()" title="Backup JSON">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Backup
+        </button>
+        <button type="button" class="btn btn-ghost-light" onclick="document.getElementById('restoreFileInput').click()" title="Restore JSON">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Restore
+        </button>
+        <input type="file" id="restoreFileInput" accept=".json" style="display:none" onchange="importBackupJSON(event)" />
+        <button type="button" class="btn btn-ghost-light" onclick="exportAllCSV()" title="Export CSV">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+          CSV
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================
+       MAIN CONTENT
+       ======================================================================== -->
+  <main class="main-wrap">
+
+    <nav class="tab-bar no-print" role="tablist">
+      <button type="button" class="tab-btn active" data-tab="pos" onclick="switchTab('pos')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        <span>POS</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="inventory" id="navInventoryBtn" onclick="switchTab('inventory')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        <span>Inventory</span>
+        <span class="tab-badge" id="navLowStockBadge">0</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="reports" id="navReportsBtn" onclick="switchTab('reports')">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <span>Reports</span>
+        <span class="tab-badge" id="navSalesCountBadge">0</span>
+      </button>
+    </nav>
+
+    <!-- TAB 1: POS -->
+    <section id="tab-pos" class="tab-panel active">
+      <div class="sample-banner" id="sampleNoticeBanner">
+        <div>
+          <strong>Online Sync Enabled:</strong> Real-time Firebase cloud connection active for Tyler's Integrated Farm.
+        </div>
+        <button type="button" class="btn btn-sm btn-outline" onclick="document.getElementById('sampleNoticeBanner').style.display='none'">Hide</button>
+      </div>
+
+      <div class="pos-layout">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2.2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              Select Product (Tap to add)
+            </div>
+            <button type="button" class="btn btn-sm btn-outline" id="inventoryShortcutBtn" onclick="switchTab('inventory')">+ Add / Edit</button>
+          </div>
+
+          <div class="filter-row">
+            <div class="search-box">
+              <input type="text" id="posSearchInput" class="form-control" placeholder="Search product..." oninput="renderPOSProducts()" />
+            </div>
+            <div class="cat-pills" id="posCategoryPills">
+              <button type="button" class="cat-pill active" data-cat="All" onclick="setPOSCategory('All')">All</button>
+              <button type="button" class="cat-pill" data-cat="Fresh Produce" onclick="setPOSCategory('Fresh Produce')">Produce</button>
+              <button type="button" class="cat-pill" data-cat="Livestock/Poultry" onclick="setPOSCategory('Livestock/Poultry')">Poultry</button>
+              <button type="button" class="cat-pill" data-cat="Farm Inputs" onclick="setPOSCategory('Farm Inputs')">Inputs</button>
+              <button type="button" class="cat-pill" data-cat="Others" onclick="setPOSCategory('Others')">Others</button>
+            </div>
+          </div>
+
+          <div class="product-grid" id="posProductGrid"></div>
+        </div>
+
+        <div class="card cart-panel">
+          <div class="card-header">
+            <div class="card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2.2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+              Current Order (Cart)
+            </div>
+            <button type="button" class="btn btn-sm btn-danger-outline" onclick="clearCart()">Clear</button>
+          </div>
+
+          <div class="cart-items" id="cartItemsContainer">
+            <div class="cart-empty">Cart is empty. Tap products on the left.</div>
+          </div>
+
+          <div class="checkout-grid">
+            <div>
+              <label class="form-label" for="posCustomer">Customer Name</label>
+              <input type="text" id="posCustomer" class="form-control" placeholder="Walk-in Customer" />
+            </div>
+            <div>
+              <label class="form-label" for="posPaymentMethod">Payment Method</label>
+              <select id="posPaymentMethod" class="form-control" onchange="recalculateCartTotals()">
+                <option value="Cash">Cash</option>
+                <option value="GCash">GCash</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="Utang/Credit">Utang / Credit</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="checkout-grid" style="margin-bottom:0.65rem;">
+            <div>
+              <label class="form-label" for="posAmountTendered">Amount Tendered (₱)</label>
+              <input type="number" id="posAmountTendered" class="form-control" step="0.01" min="0" placeholder="0.00" oninput="recalculateCartTotals()" />
+            </div>
+            <div>
+              <label class="form-label" for="posNotes">Remarks</label>
+              <input type="text" id="posNotes" class="form-control" placeholder="Optional notes" />
+            </div>
+          </div>
+
+          <div class="totals-box">
+            <div class="total-row">
+              <span>Total Items:</span>
+              <strong id="cartTotalItems">0</strong>
+            </div>
+            <div class="total-row grand">
+              <span>GRAND TOTAL:</span>
+              <span id="cartGrandTotal">₱0.00</span>
+            </div>
+            <div class="total-row" style="margin-top:5px; font-weight:700; color: var(--slate-700);">
+              <span>Change:</span>
+              <span id="cartChange">₱0.00</span>
+            </div>
+          </div>
+
+          <button type="button" class="btn btn-primary btn-lg" onclick="completeSale()">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            Complete Sale
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: INVENTORY -->
+    <section id="tab-inventory" class="tab-panel">
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Total Products</div>
+          <div class="kpi-value" id="invKpiCount">0</div>
+          <div class="kpi-sub">Active items</div>
+        </div>
+        <div class="kpi-card dark">
+          <div class="kpi-label">Stock Value (Cost)</div>
+          <div class="kpi-value" id="invKpiCostValue">₱0.00</div>
+          <div class="kpi-sub">Remaining cost</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Retail Value</div>
+          <div class="kpi-value" id="invKpiRetailValue">₱0.00</div>
+          <div class="kpi-sub">Potential sales</div>
+        </div>
+        <div class="kpi-card amber">
+          <div class="kpi-label">Low Stock Alerts</div>
+          <div class="kpi-value" id="invKpiLowCount">0</div>
+          <div class="kpi-sub">Need restock</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 1.15rem;" id="addProductCardContainer">
+        <div class="card-header">
+          <div class="card-title">Add New Product</div>
+        </div>
+        <form id="addProductForm" onsubmit="handleAddProduct(event)">
+          <div class="inv-form-grid">
+            <div>
+              <label class="form-label" for="newProdName">Product Name *</label>
+              <input type="text" id="newProdName" class="form-control" required placeholder="Product name" />
+            </div>
+            <div>
+              <label class="form-label" for="newProdCategory">Category *</label>
+              <select id="newProdCategory" class="form-control">
+                <option value="Fresh Produce">Fresh Produce</option>
+                <option value="Livestock/Poultry">Livestock/Poultry</option>
+                <option value="Farm Inputs">Farm Inputs</option>
+                <option value="Others">Others</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label" for="newProdUnit">Unit *</label>
+              <select id="newProdUnit" class="form-control">
+                <option value="kg">kg</option>
+                <option value="pc">pc</option>
+                <option value="pack">pack</option>
+                <option value="tray">tray</option>
+                <option value="sack">sack</option>
+                <option value="liter">liter</option>
+              </select>
+            </div>
+            <div>
+              <label class="form-label" for="newProdCost">Cost Price (₱) *</label>
+              <input type="number" id="newProdCost" class="form-control" step="0.01" min="0" required placeholder="0.00" />
+            </div>
+            <div>
+              <label class="form-label" for="newProdPrice">Selling Price (₱) *</label>
+              <input type="number" id="newProdPrice" class="form-control" step="0.01" min="0" required placeholder="0.00" />
+            </div>
+            <div>
+              <label class="form-label" for="newProdStock">Initial Stock *</label>
+              <input type="number" id="newProdStock" class="form-control" step="0.01" min="0" required placeholder="0" />
+            </div>
+            <div>
+              <label class="form-label" for="newProdReorder">Low Stock Alert *</label>
+              <input type="number" id="newProdReorder" class="form-control" step="0.01" min="0" value="5" required />
+            </div>
+            <div>
+              <button type="submit" class="btn btn-primary" style="width:100%;">+ Save Product</button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <div class="card" style="margin-bottom: 1.15rem;">
+        <div class="card-header">
+          <div class="card-title">Inventory List</div>
+          <input type="text" id="invSearchInput" class="form-control" style="max-width:220px;" placeholder="Search..." oninput="renderInventoryTable()" />
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Category</th>
+                <th>Unit</th>
+                <th class="num">Cost</th>
+                <th class="num">Price</th>
+                <th class="num">Profit/Unit</th>
+                <th class="num">Stock</th>
+                <th>Status</th>
+                <th id="invActionsHeader">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="inventoryTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Recent Stock Log (Last 15)</div>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Date &amp; Time</th>
+                <th>Product</th>
+                <th>Type</th>
+                <th class="num">Qty</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="stockLogsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: REPORTS -->
+    <section id="tab-reports" class="tab-panel">
+      <div class="card no-print" style="margin-bottom: 1.15rem;">
+        <div class="inv-form-grid">
+          <div>
+            <label class="form-label" for="repDatePreset">Date Range</label>
+            <select id="repDatePreset" class="form-control" onchange="handleReportPresetChange()">
+              <option value="today">Today</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="all" selected>All Time</option>
+              <option value="custom">Custom Date</option>
+            </select>
+          </div>
+          <div id="customDateFromWrap" style="display:none;">
+            <label class="form-label" for="repDateFrom">Start Date</label>
+            <input type="date" id="repDateFrom" class="form-control" onchange="renderReports()" />
+          </div>
+          <div id="customDateToWrap" style="display:none;">
+            <label class="form-label" for="repDateTo">End Date</label>
+            <input type="date" id="repDateTo" class="form-control" onchange="renderReports()" />
+          </div>
+          <div>
+            <label class="form-label" for="repPaymentFilter">Payment Method</label>
+            <select id="repPaymentFilter" class="form-control" onchange="renderReports()">
+              <option value="All">All Payments</option>
+              <option value="Cash">Cash</option>
+              <option value="GCash">GCash</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+              <option value="Utang/Credit">Utang / Credit</option>
+            </select>
+          </div>
+          <div>
+            <button type="button" class="btn btn-dark" style="width:100%;" onclick="window.print()">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+              Print / Save PDF
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Gross Sales</div>
+          <div class="kpi-value" id="repKpiGross">₱0.00</div>
+          <div class="kpi-sub" id="repKpiRangeLabel">All transactions</div>
+        </div>
+        <div class="kpi-card dark">
+          <div class="kpi-label">Total COGS</div>
+          <div class="kpi-value" id="repKpiCost">₱0.00</div>
+          <div class="kpi-sub">Cost of goods sold</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Net Gross Profit</div>
+          <div class="kpi-value" id="repKpiProfit" style="color: var(--emerald-700);">₱0.00</div>
+          <div class="kpi-sub" id="repKpiMargin">Margin: 0.0%</div>
+        </div>
+        <div class="kpi-card amber">
+          <div class="kpi-label">Transactions</div>
+          <div class="kpi-value" id="repKpiTxCount">0</div>
+          <div class="kpi-sub">Successful receipts</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom: 1.15rem;">
+        <div class="card-header">
+          <div class="card-title">Product Performance Breakdown</div>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Category</th>
+                <th class="num">Qty Sold</th>
+                <th class="num">Revenue</th>
+                <th class="num">Cost</th>
+                <th class="num">Profit</th>
+                <th class="num">Stock Left</th>
+              </tr>
+            </thead>
+            <tbody id="productBreakdownBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Transaction Ledger</div>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>Receipt #</th>
+                <th>Date &amp; Time</th>
+                <th>Customer</th>
+                <th>Items</th>
+                <th>Payment</th>
+                <th class="num">Total (₱)</th>
+                <th class="num">Profit (₱)</th>
+                <th class="no-print" id="ledgerActionsHeader">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="salesLedgerBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================================================
+       FOOTER SIGNATURE
+       ======================================================================== -->
+  <footer class="app-footer">
+    Tyler's Integrated Farm POS &amp; Inventory System &bull; App developed by dandarz
+  </footer>
+
+  <!-- ========================================================================
+       MODALS
+       ======================================================================== -->
+  <div class="modal-backdrop" id="receiptModal">
+    <div class="modal-box">
+      <div class="receipt-paper" id="receiptContent"></div>
+      <div style="display:flex; gap:0.5rem; margin-top:0.85rem;" class="no-print">
+        <button type="button" class="btn btn-primary" style="flex:1;" onclick="printReceiptModal()">Print</button>
+        <button type="button" class="btn btn-outline" style="flex:1;" onclick="closeModal('receiptModal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="restockModal">
+    <div class="modal-box">
+      <div class="card-header">
+        <div class="card-title">Restock / New Harvest</div>
+        <button type="button" class="btn btn-sm btn-outline" onclick="closeModal('restockModal')">✕</button>
+      </div>
+      <form onsubmit="submitRestock(event)">
+        <input type="hidden" id="restockProdId" />
+        <div style="margin-bottom:0.65rem;">
+          <div class="form-label">Product</div>
+          <div id="restockProdTitle" style="font-weight:800; font-size:1rem; color:var(--emerald-900);"></div>
+          <div id="restockCurrentInfo" style="font-size:0.78rem; color:var(--slate-500);"></div>
+        </div>
+        <div style="margin-bottom:0.65rem;">
+          <label class="form-label" for="restockQty">Quantity to Add *</label>
+          <input type="number" id="restockQty" class="form-control" step="0.01" min="0.01" required placeholder="e.g. 25" />
+        </div>
+        <div style="margin-bottom:0.65rem;">
+          <label class="form-label" for="restockNewCost">Update Unit Cost (Optional)</label>
+          <input type="number" id="restockNewCost" class="form-control" step="0.01" min="0" />
+        </div>
+        <div style="margin-bottom:0.85rem;">
+          <label class="form-label" for="restockNote">Notes</label>
+          <input type="text" id="restockNote" class="form-control" placeholder="Harvest / restock notes" />
+        </div>
+        <div style="display:flex; gap:0.5rem;">
+          <button type="submit" class="btn btn-primary" style="flex:1;">Save Stock</button>
+          <button type="button" class="btn btn-outline" onclick="closeModal('restockModal')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="editProductModal">
+    <div class="modal-box">
+      <div class="card-header">
+        <div class="card-title">Edit Product</div>
+        <button type="button" class="btn btn-sm btn-outline" onclick="closeModal('editProductModal')">✕</button>
+      </div>
+      <form onsubmit="submitEditProduct(event)">
+        <input type="hidden" id="editProdId" />
+        <div style="margin-bottom:0.65rem;">
+          <label class="form-label" for="editProdName">Product Name *</label>
+          <input type="text" id="editProdName" class="form-control" required />
+        </div>
+        <div class="checkout-grid">
+          <div>
+            <label class="form-label" for="editProdCategory">Category</label>
+            <select id="editProdCategory" class="form-control">
+              <option value="Fresh Produce">Fresh Produce</option>
+              <option value="Livestock/Poultry">Livestock/Poultry</option>
+              <option value="Farm Inputs">Farm Inputs</option>
+              <option value="Others">Others</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" for="editProdUnit">Unit</label>
+            <select id="editProdUnit" class="form-control">
+              <option value="kg">kg</option>
+              <option value="pc">pc</option>
+              <option value="pack">pack</option>
+              <option value="tray">tray</option>
+              <option value="sack">sack</option>
+              <option value="liter">liter</option>
+            </select>
+          </div>
+        </div>
+        <div class="checkout-grid">
+          <div>
+            <label class="form-label" for="editProdCost">Cost (₱) *</label>
+            <input type="number" id="editProdCost" class="form-control" step="0.01" min="0" required />
+          </div>
+          <div>
+            <label class="form-label" for="editProdPrice">Price (₱) *</label>
+            <input type="number" id="editProdPrice" class="form-control" step="0.01" min="0" required />
+          </div>
+        </div>
+        <div class="checkout-grid" style="margin-bottom:0.85rem;">
+          <div>
+            <label class="form-label" for="editProdStock">Stock *</label>
+            <input type="number" id="editProdStock" class="form-control" step="0.01" min="0" required />
+          </div>
+          <div>
+            <label class="form-label" for="editProdReorder">Alert Level *</label>
+            <input type="number" id="editProdReorder" class="form-control" step="0.01" min="0" required />
+          </div>
+        </div>
+        <div style="display:flex; gap:0.5rem;">
+          <button type="submit" class="btn btn-primary" style="flex:1;">Update</button>
+          <button type="button" class="btn btn-outline" onclick="closeModal('editProductModal')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal-box">
+      <div class="card-header">
+        <div class="card-title">Change Username &amp; Password</div>
+        <button type="button" class="btn btn-sm btn-outline" onclick="closeModal('settingsModal')">✕</button>
+      </div>
+      <form onsubmit="submitSettingsUpdate(event)">
+        <div style="margin-bottom: 0.65rem;">
+          <label class="form-label" for="settingsTargetRole">Select Role to Update</label>
+          <select id="settingsTargetRole" class="form-control" onchange="loadRoleSettingsToForm()">
+            <option value="Admin">Admin Account</option>
+            <option value="Cashier">Cashier Account</option>
+          </select>
+        </div>
+        <div style="margin-bottom: 0.65rem;">
+          <label class="form-label" for="settingsNewUsername">New Username</label>
+          <input type="text" id="settingsNewUsername" class="form-control" required placeholder="New username..." />
+        </div>
+        <div style="margin-bottom: 1rem;">
+          <label class="form-label" for="settingsNewPin">New PIN / Password</label>
+          <input type="password" id="settingsNewPin" class="form-control" required placeholder="New PIN..." />
+        </div>
+        <div style="display:flex; gap:0.5rem;">
+          <button type="submit" class="btn btn-primary" style="flex:1;">Save Changes</button>
+          <button type="button" class="btn btn-outline" onclick="closeModal('settingsModal')">Close</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="confirmModal">
+    <div class="modal-box" style="max-width:380px;">
+      <div class="card-header">
+        <div class="card-title" id="confirmTitle">Confirmation</div>
+      </div>
+      <p id="confirmMessage" style="font-size:0.85rem; color:var(--slate-700); margin-bottom:1.15rem;"></p>
+      <div style="display:flex; gap:0.5rem; justify-content:flex-end;">
+        <button type="button" class="btn btn-outline" onclick="closeModal('confirmModal')">Cancel</button>
+        <button type="button" class="btn btn-primary" id="confirmYesBtn">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- ========================================================================
+       JAVASCRIPT WITH FIREBASE ONLINE SYNC
+       ======================================================================== -->
+  <script>
+    "use strict";
+
+    let authConfig = {
+      "Admin": { username: "admin", pin: "1234" },
+      "Cashier": { username: "cashier", pin: "5678" }
+    };
+
+    const DEFAULT_PRODUCTS = [
+      { id: "p1", name: "Eggplant", category: "Fresh Produce", unit: "kg", cost: 35.00, price: 60.00, stock: 45, reorder: 10 },
+      { id: "p2", name: "Bell Pepper", category: "Fresh Produce", unit: "kg", cost: 90.00, price: 150.00, stock: 18, reorder: 5 },
+      { id: "p3", name: "Bird's Eye Chili (Siling Labuyo)", category: "Fresh Produce", unit: "kg", cost: 80.00, price: 140.00, stock: 12, reorder: 5 },
+      { id: "p4", name: "Organic Pechay / Lettuce", category: "Fresh Produce", unit: "pack", cost: 20.00, price: 40.00, stock: 30, reorder: 8 },
+      { id: "p5", name: "Free-Range Native Eggs (30s)", category: "Livestock/Poultry", unit: "tray", cost: 210.00, price: 280.00, stock: 15, reorder: 5 },
+      { id: "p6", name: "Dressed Native Chicken", category: "Livestock/Poultry", unit: "kg", cost: 165.00, price: 240.00, stock: 10, reorder: 4 },
+      { id: "p7", name: "Organic Vermicast Fertilizer", category: "Farm Inputs", unit: "sack", cost: 180.00, price: 300.00, stock: 25, reorder: 6 },
+      { id: "p8", name: "Carbonized Rice Hull (CRH)", category: "Farm Inputs", unit: "sack", cost: 70.00, price: 130.00, stock: 4, reorder: 5 }
+    ];
+
+    let appState = {
+      products: [],
+      sales: [],
+      stockLogs: [],
+      receiptCounter: 1001,
+      auth: authConfig,
+      currentUserRole: "",
+      currentUsername: ""
+    };
+
+    let cart = [];
+    let selectedPOSCategory = "All";
+    let isInitializedFromFirebase = false;
+
+    function round2(num) {
+      return Math.round((Number(num) + Number.EPSILON) * 100) / 100;
+    }
+
+    function formatPHP(amount) {
+      const val = round2(amount || 0);
+      return "₱" + val.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    function formatQty(q) {
+      const val = round2(q || 0);
+      return Number.isInteger(val) ? val.toString() : val.toFixed(2).replace(/\.?0+$/, "");
+    }
+
+    function escapeHTML(str) {
+      return String(str || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    // ========================================================================
+    // FIREBASE SYNC FUNCTIONS
+    // ========================================================================
+    function initFirebaseSync() {
+      if (!window.firebaseDB) return;
+      const { db, ref, onValue } = window.firebaseDB;
+      const dbRef = ref(db, 'tylers_integrated_farm_pos');
+
+      // Realtime listener para sa live online auto-save / multi-device sync
+      onValue(dbRef, (snapshot) => {
+        const val = snapshot.val();
+        const pillText = document.getElementById("saveStatusText");
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+        if (val) {
+          appState.products = Array.isArray(val.products) ? val.products : DEFAULT_PRODUCTS;
+          appState.sales = Array.isArray(val.sales) ? val.sales : [];
+          appState.stockLogs = Array.isArray(val.stockLogs) ? val.stockLogs : [];
+          appState.receiptCounter = typeof val.receiptCounter === "number" ? val.receiptCounter : 1001;
+          if (val.auth && val.auth.Admin && val.auth.Cashier) {
+            appState.auth = val.auth;
+          }
+        } else {
+          // Kung wala pa sa Firebase, i-save ang initial default data
+          appState.products = JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
+          appState.auth = authConfig;
+          appState.stockLogs = [{
+            id: "log_init",
+            timestamp: new Date().toISOString(),
+            productName: "Initial Farm Inventory",
+            type: "INITIAL",
+            qty: 0,
+            note: "Pre-seeded starter products"
+          }];
+          saveState();
+        }
+
+        if (pillText) {
+          pillText.textContent = `Online Synced (${timeStr})`;
+        }
+
+        if (!isInitializedFromFirebase) {
+          isInitializedFromFirebase = true;
+          checkAuthentication();
+        } else {
+          refreshActiveUI();
+        }
+      }, (error) => {
+        console.error("Firebase sync error:", error);
+        const pillText = document.getElementById("saveStatusText");
+        if (pillText) pillText.textContent = "Offline Mode";
+        showToast("Warning: Real-time database sync error.", "error");
+      });
+    }
+
+    function saveState() {
+      if (!window.firebaseDB) {
+        showToast("Firebase not loaded yet.", "error");
+        return;
+      }
+      const { db, ref, set } = window.firebaseDB;
+      const dbRef = ref(db, 'tylers_integrated_farm_pos');
+
+      set(dbRef, {
+        products: appState.products,
+        sales: appState.sales,
+        stockLogs: appState.stockLogs,
+        receiptCounter: appState.receiptCounter,
+        auth: appState.auth
+      }).then(() => {
+        const pillText = document.getElementById("saveStatusText");
+        if (pillText) {
+          const now = new Date();
+          const timeStr = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          pillText.textContent = `Cloud Saved (${timeStr})`;
+        }
+      }).catch((err) => {
+        console.error("Save error:", err);
+        showToast("Warning: Failed to save to Firebase online storage.", "error");
+      });
+
+      updateNavBadges();
+    }
+
+    function refreshActiveUI() {
+      const activeTabBtn = document.querySelector(".tab-btn.active");
+      if (activeTabBtn) {
+        const currentTab = activeTabBtn.dataset.tab;
+        if (currentTab === "pos") {
+          renderPOSProducts();
+        } else if (currentTab === "inventory") {
+          renderInventoryKPIs();
+          renderInventoryTable();
+          renderStockLogs();
+        } else if (currentTab === "reports") {
+          renderReports();
+        }
+      }
+      updateNavBadges();
+    }
+
+    function checkAuthentication() {
+      if (!appState.currentUserRole) {
+        openLoginModal();
+      } else {
+        document.getElementById("activeRoleText").textContent = appState.currentUserRole;
+        document.getElementById("activeUsernameText").textContent = appState.currentUsername || appState.currentUserRole;
+        applyRolePermissions();
+      }
+      refreshActiveUI();
+    }
+
+    function openLoginModal() {
+      document.getElementById("loginPin").value = "";
+      const role = document.getElementById("loginRole").value;
+      if (appState.auth[role]) {
+        document.getElementById("loginUsername").value = appState.auth[role].username;
+      }
+      openModal("loginModal");
+    }
+
+    function logoutSession() {
+      appState.currentUserRole = "";
+      appState.currentUsername = "";
+      openLoginModal();
+    }
+
+    function updateLoginUserPlaceholder() {
+      const selectedRole = document.getElementById("loginRole").value;
+      if (appState.auth[selectedRole]) {
+        document.getElementById("loginUsername").value = appState.auth[selectedRole].username;
+      }
+    }
+
+    function handleLoginSubmit(e) {
+      e.preventDefault();
+      const selectedRole = document.getElementById("loginRole").value;
+      const enteredUser = document.getElementById("loginUsername").value.trim().toLowerCase();
+      const enteredPin = document.getElementById("loginPin").value.trim();
+
+      const roleAuth = appState.auth[selectedRole];
+      if (roleAuth && roleAuth.username.toLowerCase() === enteredUser && roleAuth.pin === enteredPin) {
+        appState.currentUserRole = selectedRole;
+        appState.currentUsername = roleAuth.username;
+
+        document.getElementById("activeRoleText").textContent = selectedRole;
+        document.getElementById("activeUsernameText").textContent = roleAuth.username;
+        closeModal("loginModal");
+        applyRolePermissions();
+        showToast(`Successfully logged in as ${roleAuth.username} (${selectedRole})!`);
+      } else {
+        showToast("Invalid Username or PIN! Please try again.", "error");
+        document.getElementById("loginPin").value = "";
+      }
+    }
+
+    function openSettingsModal() {
+      if (appState.currentUserRole !== "Admin") {
+        showToast("Access Denied: Admin role required to change credentials.", "error");
+        return;
+      }
+      document.getElementById("settingsTargetRole").value = "Admin";
+      loadRoleSettingsToForm();
+      openModal("settingsModal");
+    }
+
+    function loadRoleSettingsToForm() {
+      const role = document.getElementById("settingsTargetRole").value;
+      if (appState.auth[role]) {
+        document.getElementById("settingsNewUsername").value = appState.auth[role].username;
+        document.getElementById("settingsNewPin").value = appState.auth[role].pin;
+      }
+    }
+
+    function submitSettingsUpdate(e) {
+      e.preventDefault();
+      const role = document.getElementById("settingsTargetRole").value;
+      const newU = document.getElementById("settingsNewUsername").value.trim();
+      const newP = document.getElementById("settingsNewPin").value.trim();
+
+      if (!newU || !newP) {
+        showToast("Please provide both username and PIN.", "error");
+        return;
+      }
+
+      appState.auth[role] = { username: newU, pin: newP };
+      saveState();
+      closeModal("settingsModal");
+      showToast(`Account details updated successfully for ${role}!`);
+      
+      if (appState.currentUserRole === role) {
+        appState.currentUsername = newU;
+        document.getElementById("activeUsernameText").textContent = newU;
+      }
+    }
+
+    function applyRolePermissions() {
+      const isCashier = appState.currentUserRole === "Cashier";
+      const addProdCard = document.getElementById("addProductCardContainer");
+      const inventoryShortcut = document.getElementById("inventoryShortcutBtn");
+      
+      if (isCashier) {
+        if (addProdCard) addProdCard.style.display = "none";
+        if (inventoryShortcut) inventoryShortcut.style.display = "none";
+        const activeTab = document.querySelector(".tab-panel.active");
+        if (activeTab && activeTab.id !== "tab-pos") {
+          switchTab("pos");
+        }
+      } else {
+        if (addProdCard) addProdCard.style.display = "block";
+        if (inventoryShortcut) inventoryShortcut.style.display = "inline-flex";
+      }
+
+      const activeTabBtn = document.querySelector(".tab-btn.active");
+      if (activeTabBtn) {
+        const currentTab = activeTabBtn.dataset.tab;
+        if (currentTab === "inventory") {
+          renderInventoryTable();
+        } else if (currentTab === "reports") {
+          renderReports();
+        }
+      }
+    }
+
+    function switchTab(tabName) {
+      if (appState.currentUserRole === "Cashier" && tabName !== "pos") {
+        showToast("Access Denied: Cashier is restricted to the POS tab.", "error");
+        return;
+      }
+
+      document.querySelectorAll(".tab-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.tab === tabName);
+      });
+      document.querySelectorAll(".tab-panel").forEach(panel => {
+        panel.classList.toggle("active", panel.id === `tab-${tabName}`);
+      });
+
+      if (tabName === "pos") {
+        renderPOSProducts();
+        renderCart();
+      } else if (tabName === "inventory") {
+        renderInventoryKPIs();
+        renderInventoryTable();
+        renderStockLogs();
+      } else if (tabName === "reports") {
+        renderReports();
+      }
+    }
+
+    function showToast(message, type = "success") {
+      const container = document.getElementById("toastContainer");
+      const toast = document.createElement("div");
+      toast.className = `toast ${type === "error" ? "error" : type === "warn" ? "warn" : ""}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        toast.style.transition = "opacity 0.25s";
+        setTimeout(() => toast.remove(), 260);
+      }, 3200);
+    }
+
+    function openModal(id) {
+      document.getElementById(id).classList.add("open");
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove("open");
+      if (id === "receiptModal") {
+        document.body.classList.remove("printing-receipt");
+      }
+    }
+
+    function showConfirm(title, message, onConfirm) {
+      document.getElementById("confirmTitle").textContent = title;
+      document.getElementById("confirmMessage").textContent = message;
+      const yesBtn = document.getElementById("confirmYesBtn");
+      yesBtn.onclick = () => {
+        closeModal("confirmModal");
+        onConfirm();
+      };
+      openModal("confirmModal");
+    }
+
+    function updateNavBadges() {
+      const lowCount = appState.products.filter(p => round2(p.stock) <= round2(p.reorder)).length;
+      document.getElementById("navLowStockBadge").textContent = lowCount;
+      document.getElementById("navSalesCountBadge").textContent = appState.sales.length;
+    }
+
+    function setPOSCategory(cat) {
+      selectedPOSCategory = cat;
+      document.querySelectorAll("#posCategoryPills .cat-pill").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.cat === cat);
+      });
+      renderPOSProducts();
+    }
+
+    function renderPOSProducts() {
+      const grid = document.getElementById("posProductGrid");
+      const query = (document.getElementById("posSearchInput").value || "").trim().toLowerCase();
+
+      const filtered = appState.products.filter(p => {
+        const matchCat = selectedPOSCategory === "All" || p.category === selectedPOSCategory;
+        const matchText = !query || p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query);
+        return matchCat && matchText;
+      });
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:1.5rem; color:var(--slate-500);">No products found.</div>`;
+        return;
+      }
+
+      grid.innerHTML = filtered.map(p => {
+        const stock = round2(p.stock);
+        const isOut = stock <= 0;
+        const isLow = !isOut && stock <= round2(p.reorder);
+        const badgeClass = isOut ? "badge-out" : isLow ? "badge-low" : "badge-ok";
+        const badgeText = isOut ? "Out of Stock" : isLow ? `Low: ${formatQty(stock)} ${escapeHTML(p.unit)}` : `${formatQty(stock)} ${escapeHTML(p.unit)}`;
+
+        return `
+          <div class="prod-card ${isOut ? "out-of-stock" : ""}" onclick="${isOut ? "" : `addToCart('${p.id}')`}" role="button" tabindex="0">
+            <div>
+              <div class="prod-cat">${escapeHTML(p.category)}</div>
+              <div class="prod-name">${escapeHTML(p.name)}</div>
+            </div>
+            <div>
+              <div class="prod-price">${formatPHP(p.price)} <span>/ ${escapeHTML(p.unit)}</span></div>
+              <div class="prod-stock">
+                <span>Stock:</span>
+                <span class="badge ${badgeClass}">${badgeText}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function addToCart(productId) {
+      const prod = appState.products.find(p => p.id === productId);
+      if (!prod) return;
+
+      const available = round2(prod.stock);
+      if (available <= 0) {
+        showToast(`${prod.name} is out of stock.`, "error");
+        return;
+      }
+
+      const existing = cart.find(item => item.productId === productId);
+      if (existing) {
+        const nextQty = round2(existing.qty + 1);
+        if (nextQty > available) {
+          existing.qty = available;
+          showToast(`Only ${formatQty(available)} ${prod.unit} stock remaining.`, "warn");
+        } else {
+          existing.qty = nextQty;
+        }
+      } else {
+        const initialQty = available >= 1 ? 1 : available;
+        cart.push({ productId, qty: initialQty });
+      }
+      renderCart();
+    }
+
+    function updateCartQty(productId, deltaOrExact, isExact = false) {
+      const prod = appState.products.find(p => p.id === productId);
+      const itemIndex = cart.findIndex(c => c.productId === productId);
+      if (!prod || itemIndex === -1) return;
+
+      const available = round2(prod.stock);
+      let newQty = isExact ? round2(parseFloat(deltaOrExact)) : round2(cart[itemIndex].qty + deltaOrExact);
+
+      if (isNaN(newQty) || newQty <= 0) {
+        cart.splice(itemIndex, 1);
+      } else if (newQty > available) {
+        cart[itemIndex].qty = available;
+        showToast(`Max available stock: ${formatQty(available)} ${prod.unit}`, "warn");
+      } else {
+        cart[itemIndex].qty = new
